@@ -9,6 +9,15 @@ CORS(app)
 def home():
     return "your backend is running :)"
 
+# Dummy route for testing
+@app.route("/test", methods=["GET"])
+def test():
+    return jsonify({
+        "status": "success",
+        "message": "Flask app is live and responding!"
+    })
+
+
 @app.route("/review", methods=["POST"])
 def review():
     print("Reached backend.review_repository()")
