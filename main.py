@@ -7,7 +7,7 @@ CORS(app)
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+    return "your backend is running :)"
 
 @app.route("/review", methods=["POST"])
 def review():
