@@ -3,7 +3,7 @@ from flask_cors import CORS
 import backend  # your backend.py file
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 @app.route("/")
 def home():
