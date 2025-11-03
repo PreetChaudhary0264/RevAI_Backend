@@ -109,7 +109,7 @@ def review_repo(owner, repo_name,pr_number=None):
     files = fetch_all_files(owner, repo_name)
     all_reviews = []
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=1) as executor:
         results = executor.map(process_file, files)
 
     for res in results:
