@@ -23,45 +23,68 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 #     response.raise_for_status()
 #     return response.json()
 
-def fetch_all_files(owner, repo_name, path=""):
-    url = f"https://api.github.com/repos/{owner}/{repo_name}/contents/{path}"
+def fetch_all_files(owner, repo_name):
+    """
+    Fetch all code files (.py, .js, .jsx, .ts, .tsx, .java, .cpp) from a GitHub repo,
+    including nested directories, using the correct default branch.
+    """
     headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
-    items = response.json()
-    
-    #recursive check subFolders
-    all_files = []
-    for item in items:
-        if item["type"] == "dir":
-            all_files.extend(fetch_all_files(owner, repo_name, item["path"]))
-        elif item["type"] == "file" and item["name"].endswith((".py", ".js", ".java", ".cpp", ".ts")):
-            all_files.append(item)
-    return all_files
+
+    # Step 1: Detect default branch
+    repo_info_url = f"https://api.github.com/repos/{owner}/{repo_name}"
+    repo_info_resp = requests.get(repo_info_url, headers=headers)
+    repo_info_resp.raise_for_status()
+    default_branch = repo_info_resp.json().get("default_branch", "main")
+
+    # Step 2: Fetch the full tree recursively
+    tree_url = f"https://api.github.com/repos/{owner}/{repo_name}/git/trees/{default_branch}?recursive=1"
+    tree_resp = requests.get(tree_url, headers=headers)
+    tree_resp.raise_for_status()
+    tree_data = tree_resp.json().get("tree", [])
+
+    files = []
+    for item in tree_data:
+        if (
+            item["type"] == "blob"
+            and item["path"].endswith((".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".cpp"))
+        ):
+            download_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{default_branch}/{item['path']}"
+            files.append({
+                "name": os.path.basename(item["path"]),
+                "path": item["path"],
+                "download_url": download_url,
+                "type": "file"
+            })
+
+    print(f"[INFO] Found {len(files)} code files in branch '{default_branch}'")
+    return files
 
 
 def download_url(file_info):
     if file_info["type"] == 'file':
-        if file_info["size"] > 100_000:  # ~100 KB limit
+        size = file_info.get("size", 0)  # Default to 0 if size not present
+        if size and size > 100_000:  # Skip only if size is known and large
             print(f"Skipping large file: {file_info['name']}")
             return None
+
         url = file_info["download_url"]
         response = requests.get(url)
         response.raise_for_status()
         return response.text
     return None
 
+
 import os
 
-def get_all_code_files(repo_path, exts=(".py", ".js", ".java", ".cpp", ".ts")):
-    code_files = []
-    for root, _, files in os.walk(repo_path):
-        if any(skip in root for skip in ['node_modules', '.git', '__pycache__']):
-            continue
-        for file in files:
-            if file.endswith(exts):
-                code_files.append(os.path.join(root, file))
-    return code_files
+# def get_all_code_files(repo_path, exts=(".py", ".js", ".java", ".cpp", ".ts")):
+#     code_files = []
+#     for root, _, files in os.walk(repo_path):
+#         if any(skip in root for skip in ['node_modules', '.git', '__pycache__']):
+#             continue
+#         for file in files:
+#             if file.endswith(exts):
+#                 code_files.append(os.path.join(root, file))
+#     return code_files
 
 
 def code_splitter(code, chunk_size=500, chunk_overlap=50):
@@ -92,8 +115,24 @@ code_review_prompt = PromptTemplate(
 
 
 def process_file(file):
+    # Skip irrelevant files
+    skip_files = {
+        "vite.config.js", "eslint.config.js", "tailwind.config.js",
+        "package-lock.json", "yarn.lock", "package.json",
+        "README.md", "postcss.config.js"
+    }
+
+    if file["name"] in skip_files or file["name"].endswith((".json", ".lock")):
+        print(f"Skipping irrelevant file: {file['name']}")
+        return None
+
     content = download_url(file)
     if not content:
+        return None
+
+    # Only review supported code types
+    if not file["name"].endswith((".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".cpp")):
+        print(f"Skipping unsupported file type: {file['name']}")
         return None
 
     chunks = [c for c in code_splitter(content) if c.strip()]
@@ -103,7 +142,9 @@ def process_file(file):
         review = model.invoke(formatted_prompt)
         reviews.append(review.content)
         time.sleep(0.3)  # small pause between Gemini calls
+
     return {"file": file["name"], "review": "\n".join(reviews)}
+
 
 def review_repo(owner, repo_name,pr_number=None):
     files = fetch_all_files(owner, repo_name)
