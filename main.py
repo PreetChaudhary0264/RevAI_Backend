@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS, cross_origin
 from celery_app import run_review,celery_app  # import the task from celery_app.py
+import os
 
 app = Flask(__name__)
 CORS(app)  # enable global CORS
@@ -78,4 +79,4 @@ def check_status(task_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
