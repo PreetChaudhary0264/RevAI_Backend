@@ -54,25 +54,20 @@ def run_review(self, repo_url, pr_number):
         }
 
     except Exception as e:
-       import traceback
-       tb = traceback.format_exc()
-       print(f"❌ Task failed due to {type(e).__name__}: {e}")
-       print(tb)  # full traceback in Render logs
+     import traceback
+     tb = traceback.format_exc()
+     print(f"❌ Task failed due to {type(e).__name__}: {e}")
+     print(tb)
 
-       # Explicitly return meta info instead of relying on Celery internals
-       failure_info = {
-          "status": "failed",
-          "message": f"Task failed due to {type(e).__name__}: {e}",
-          "traceback": tb,
-       }
+     failure_info = {
+        "status": "failed",
+        "message": f"Task failed due to {type(e).__name__}: {e}",
+        "exc_type": type(e).__name__,  # Added this line
+        "traceback": tb,
+     }
 
-       # Update task state for your status polling
-       self.update_state(
-          state="FAILURE",
-          meta=failure_info,
-        )
+     self.update_state(state="FAILURE", meta=failure_info)
+     return failure_info
 
-       # Return the same meta so Celery stores it properly
-       return failure_info
 
 
