@@ -23,21 +23,31 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 #     response.raise_for_status()
 #     return response.json()
 
-def fetch_all_files(owner, repo_name):
+def fetch_all_files(owner, repo_name, pr_number=None):
     """
-    Fetch all code files (.py, .js, .jsx, .ts, .tsx, .java, .cpp) from a GitHub repo,
-    including nested directories, using the correct default branch.
+    Fetch all code files (.py, .js, .jsx, .ts, .tsx, .java, .cpp)
+    from the PR branch (not the default branch).
     """
     headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
 
-    # Step 1: Detect default branch
-    repo_info_url = f"https://api.github.com/repos/{owner}/{repo_name}"
-    repo_info_resp = requests.get(repo_info_url, headers=headers)
-    repo_info_resp.raise_for_status()
-    default_branch = repo_info_resp.json().get("default_branch", "main")
+    # If a PR number is given, get its head branch
+    if pr_number:
+        pr_url = f"https://api.github.com/repos/{owner}/{repo_name}/pulls/{pr_number}"
+        pr_resp = requests.get(pr_url, headers=headers)
+        pr_resp.raise_for_status()
+        pr_data = pr_resp.json()
+        branch = pr_data["head"]["ref"]
+        print(f"[INFO] Reviewing PR branch: {branch}")
+    else:
+        # fallback to default branch
+        repo_info_url = f"https://api.github.com/repos/{owner}/{repo_name}"
+        repo_info_resp = requests.get(repo_info_url, headers=headers)
+        repo_info_resp.raise_for_status()
+        branch = repo_info_resp.json().get("default_branch", "main")
+        print(f"[INFO] No PR provided, using default branch: {branch}")
 
-    # Step 2: Fetch the full tree recursively
-    tree_url = f"https://api.github.com/repos/{owner}/{repo_name}/git/trees/{default_branch}?recursive=1"
+    # Fetch full tree from that branch
+    tree_url = f"https://api.github.com/repos/{owner}/{repo_name}/git/trees/{branch}?recursive=1"
     tree_resp = requests.get(tree_url, headers=headers)
     tree_resp.raise_for_status()
     tree_data = tree_resp.json().get("tree", [])
@@ -48,7 +58,7 @@ def fetch_all_files(owner, repo_name):
             item["type"] == "blob"
             and item["path"].endswith((".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".cpp"))
         ):
-            download_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{default_branch}/{item['path']}"
+            download_url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{branch}/{item['path']}"
             files.append({
                 "name": os.path.basename(item["path"]),
                 "path": item["path"],
@@ -56,7 +66,7 @@ def fetch_all_files(owner, repo_name):
                 "type": "file"
             })
 
-    print(f"[INFO] Found {len(files)} code files in branch '{default_branch}'")
+    print(f"[INFO] Found {len(files)} code files in branch '{branch}'")
     return files
 
 
